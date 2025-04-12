@@ -1,0 +1,4 @@
+tkinter
+browser-use
+langchain-openai
+pydantic
