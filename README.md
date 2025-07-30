@@ -1,2 +1,2 @@
 # browser-use-netsuper-order
-broweser-useを使って、netsuperでorderできるアプリを目指しています
+broweser-useを使って、ネットスーパーで注文できるアプリを目指しています
