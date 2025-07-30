@@ -18,8 +18,8 @@ from pydantic import BaseModel
 import traceback
 from openai import OpenAI
 
-NET_SUPER_ID = "09074037766"  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = "4t7DyJgUg9sn5H6"  # ネットスーパーのパスワード
+NET_SUPER_ID = "************"  # ネットスーパーのイオンID
+NET_SUPER_PASSWORD = "****************"  # ネットスーパーのパスワード
 
 class FunctionArgs(BaseModel):
     """商品追加用の引数定義"""
@@ -42,7 +42,7 @@ class AINetSuperApp:
         self.pass_word = NET_SUPER_PASSWORD
 
         # OpenAI API設定
-        self.api_key = "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"
+        self.api_key = "********************************************************"
         self.messages = []
         self.client = OpenAI(api_key=self.api_key)
         self.system_content = """あなたは優れた買い物アシスタントです。
