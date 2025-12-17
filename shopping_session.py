@@ -4,8 +4,9 @@ import re
 from typing import List, Callable, Optional
 from browser_use import Agent, Browser
 from browser_use import ChatGroq
+from dotenv import load_dotenv
 
-groq_api_key = "YOUR_GROQ_API"
+load_dotenv()
 
 class ShoppingThread(threading.Thread):
     """
@@ -45,6 +46,7 @@ class ShoppingThread(threading.Thread):
         self.task_prompt = task_prompt
         self.messages = []
         self._browser_reference = None
+        self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
 
     def log(self, message: str) -> None:
         """ログメッセージをコールバック経由で送信"""
@@ -149,7 +151,7 @@ class ShoppingThread(threading.Thread):
             )
 
             # LLM設定
-            llm = ChatGroq(api_key=groq_api_key,
+            llm = ChatGroq(api_key=self.groq_api_key,
                 model="openai/gpt-oss-120b",
                 temperature=0.2,
             )

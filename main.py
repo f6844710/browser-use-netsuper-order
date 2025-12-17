@@ -17,6 +17,10 @@ from shopping_session import ShoppingThread
 from pydantic import BaseModel
 import traceback
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# .envファイルを読み込み
+load_dotenv()
 
 NET_SUPER_ID = ""  # ネットスーパーのイオンID
 NET_SUPER_PASSWORD = ""  # ネットスーパーのパスワード
@@ -42,7 +46,7 @@ class AINetSuperApp:
         self.pass_word = NET_SUPER_PASSWORD
 
         # OpenAI API設定
-        self.api_key = ""
+        self.api_key = os.environ.get("OPENAI_API_KEY")
         self.messages = []
         self.client = OpenAI(api_key=self.api_key)
         self.system_content = """あなたは優れた買い物アシスタントです。
