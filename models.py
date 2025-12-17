@@ -20,7 +20,7 @@ class WebpageInfo(BaseModel):
         description="ネットスーパーのURL"
     )
     location_info: str = Field(
-        default="〒252-0816,神奈川県藤沢市遠藤3217-3-203",
+        default="",
         description="配送先住所情報"
     )
 
