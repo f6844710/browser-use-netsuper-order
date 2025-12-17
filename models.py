@@ -4,6 +4,8 @@
 イオンネットスーパーでの買い物自動化に使用するデータ構造を定義します。
 """
 
+your_address = "東京都新宿区"  # ここにあなたの住所を入力してください
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -20,7 +22,7 @@ class WebpageInfo(BaseModel):
         description="ネットスーパーのURL"
     )
     location_info: str = Field(
-        default="",
+        default=your_address,
         description="配送先住所情報"
     )
 

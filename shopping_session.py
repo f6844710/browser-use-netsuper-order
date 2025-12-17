@@ -5,7 +5,7 @@ from typing import List, Callable, Optional
 from browser_use import Agent, Browser
 from browser_use import ChatGroq
 
-groq_api_key = "***********************************************************"
+groq_api_key = "YOUR_GROQ_API"
 
 class ShoppingThread(threading.Thread):
     """
