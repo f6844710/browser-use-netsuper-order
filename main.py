@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 NET_SUPER_ID = "00000000000"  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = "*********+++++"  # ネットスーパーのパスワード
+NET_SUPER_PASSWORD = "******************"  # ネットスーパーのパスワード
 
 # STT/TTSサーバー設定
 STT_SERVER_URL = "http://100.119.75.44:3000/stt"
@@ -123,10 +123,6 @@ class AINetSuperApp:
         send_button = ttk.Button(input_frame, text="送信", command=self.send_message)
         send_button.pack(side=tk.RIGHT)
 
-        # 音声入力ボタン
-        self.voice_input_button = ttk.Button(input_frame, text="🎤 音声入力", command=self.toggle_voice_input)
-        self.voice_input_button.pack(side=tk.RIGHT, padx=(0, 5))
-
         # 音声合成オプション
         voice_frame = ttk.Frame(chat_frame)
         voice_frame.pack(fill=tk.X, pady=5)
@@ -135,6 +131,27 @@ class AINetSuperApp:
         voice_check = ttk.Checkbutton(voice_frame, text="音声合成を有効にする",
                                       variable=self.voice_enabled)
         voice_check.pack(anchor=tk.W)
+
+        # 右側：音声入力ボタン（目立つ位置に配置）
+        voice_input_frame = ttk.LabelFrame(shopping_frame, text="🎤 音声入力", padding="15")
+        voice_input_frame.pack(fill=tk.X, pady=10)
+
+        self.voice_input_button = ttk.Button(
+            voice_input_frame,
+            text="🎤 音声入力を開始",
+            command=self.toggle_voice_input,
+            width=30
+        )
+        self.voice_input_button.pack(fill=tk.X, ipady=10)
+
+        # 録音状態表示ラベル
+        self.recording_status_label = ttk.Label(
+            voice_input_frame,
+            text="準備完了",
+            foreground="gray",
+            font=("", 9)
+        )
+        self.recording_status_label.pack(pady=(5, 0))
 
         # 右側：認証情報設定
         auth_frame = ttk.LabelFrame(shopping_frame, text="認証情報", padding="10")
@@ -515,7 +532,7 @@ class AINetSuperApp:
             self.recording_thread = threading.Thread(target=self.record_audio_input, daemon=True)
             self.recording_thread.start()
 
-    def record_audio_input(self, duration=5, sample_rate=16000, input_volume=3.5):
+    def record_audio_input(self, duration=5, sample_rate=16000, input_volume=3.0):
         """マイクから音声を録音してSTTで変換し、チャットに送信"""
         try:
             CHUNK = 1024
@@ -589,12 +606,14 @@ class AINetSuperApp:
 
             # 録音状態をリセット
             self.is_recording = False
-            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力"))
+            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力を開始"))
+            self.root.after(0, lambda: self.recording_status_label.config(text="準備完了", foreground="gray"))
 
         except Exception as e:
             self.log_message(f"音声入力エラー: {str(e)}")
             self.is_recording = False
-            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力"))
+            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力を開始"))
+            self.root.after(0, lambda: self.recording_status_label.config(text="エラー", foreground="red"))
 
     def send_wav_to_stt(self, wav_path):
         """WAVファイルをOpenAI Whisper APIに送信してテキストを取得"""
