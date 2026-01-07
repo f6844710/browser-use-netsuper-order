@@ -24,8 +24,8 @@ from dotenv import load_dotenv
 # .envファイルを読み込み
 load_dotenv()
 
-NET_SUPER_ID = "09074037766"  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = "4t7DyJgUg9sn5H6"  # ネットスーパーのパスワード
+NET_SUPER_ID = "00000000000"  # ネットスーパーのイオンID
+NET_SUPER_PASSWORD = "*********+++++"  # ネットスーパーのパスワード
 
 # STT/TTSサーバー設定
 STT_SERVER_URL = "http://100.119.75.44:3000/stt"
