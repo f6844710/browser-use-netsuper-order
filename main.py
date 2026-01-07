@@ -41,7 +41,7 @@ class AINetSuperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("AIチャット対応ネットスーパー自動買い物アシスタント")
-        self.root.geometry("950x700")
+        self.root.geometry("1500x900")
 
         self.products = []
         self.worker = None
