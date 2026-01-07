@@ -4,14 +4,16 @@ import threading
 from datetime import datetime
 import openai
 import io
-import subprocess
 import requests
 from pydub import AudioSegment
-import tempfile
+from pydub.playback import play
 import re
 import os
 import time
 import json
+import pyaudio
+import wave
+import numpy as np
 # モジュールのインポート
 from shopping_session import ShoppingThread
 from pydantic import BaseModel
@@ -22,8 +24,13 @@ from dotenv import load_dotenv
 # .envファイルを読み込み
 load_dotenv()
 
-NET_SUPER_ID = ""  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = ""  # ネットスーパーのパスワード
+NET_SUPER_ID = "09074037766"  # ネットスーパーのイオンID
+NET_SUPER_PASSWORD = "4t7DyJgUg9sn5H6"  # ネットスーパーのパスワード
+
+# STT/TTSサーバー設定
+STT_SERVER_URL = "http://100.119.75.44:3000/stt"
+TTS_SERVER_URL = "http://192.168.1.5:10101"
+TTS_SPEAKER_ID = 753902784  # sayo
 
 class FunctionArgs(BaseModel):
     """商品追加用の引数定義"""
@@ -39,6 +46,15 @@ class AINetSuperApp:
         self.products = []
         self.worker = None
         self.task_prompt = None
+
+        # 音声録音状態管理
+        self.is_recording = False
+        self.recording_thread = None
+
+        # STT/TTS設定
+        self.stt_url = STT_SERVER_URL
+        self.tts_url = TTS_SERVER_URL
+        self.tts_speaker = TTS_SPEAKER_ID
 
         # 接続情報設定
         self.link = 'https://shop.aeon.com/netsuper/'
@@ -106,6 +122,10 @@ class AINetSuperApp:
 
         send_button = ttk.Button(input_frame, text="送信", command=self.send_message)
         send_button.pack(side=tk.RIGHT)
+
+        # 音声入力ボタン
+        self.voice_input_button = ttk.Button(input_frame, text="🎤 音声入力", command=self.toggle_voice_input)
+        self.voice_input_button.pack(side=tk.RIGHT, padx=(0, 5))
 
         # 音声合成オプション
         voice_frame = ttk.Frame(chat_frame)
@@ -258,6 +278,23 @@ class AINetSuperApp:
                 {
                     "type": "function",
                     "function": {
+                        "name": "remove_product_from_list",
+                        "description": "買い物リストから商品を削除する",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "product_name": {
+                                    "type": "string",
+                                    "description": "削除する商品名"
+                                }
+                            },
+                            "required": ["product_name"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
                         "name": "start_shopping_order",
                         "description": "買い物リストの商品を使って注文処理を開始する",
                         "parameters": {
@@ -295,6 +332,9 @@ class AINetSuperApp:
                             if function_name == "add_product_to_list":
                                 product_name = function_args.get("product_name", "")
                                 function_result = self.add_product(product_name)
+                            elif function_name == "remove_product_from_list":
+                                product_name = function_args.get("product_name", "")
+                                function_result = self.remove_product(product_name)
                             elif function_name == "start_shopping_order":
                                 # 買い物処理は別スレッドで実行
                                 self.root.after(0, self.start_shopping)
@@ -429,41 +469,153 @@ class AINetSuperApp:
             messagebox.showerror("エラー", f"買い物処理の開始に失敗しました: {str(e)}")
 
     def synthesize_speech(self, text):
+        """TTSサーバーを使用して音声合成を実行"""
         try:
             # 長すぎる場合は短縮
             if len(text) > 300:
                 text = text[:297] + "..."
 
             # 音声合成用のクエリを作成
-            parameters = {
-                "text": text,
-                "model_id": 4,
-                "style": "Neutral",
-                "style_weight": 4
-            }
+            params = {"text": text, "speaker": self.tts_speaker}
+            query_response = requests.post(
+                f"{self.tts_url}/audio_query",
+                params=params,
+                timeout=10
+            ).json()
 
-            endpoint = "http://127.0.0.1:5000/voice"
-            headers = {"Content-Type": "application/json"}
+            # 音声合成を実行
+            audio_response = requests.post(
+                f"{self.tts_url}/synthesis",
+                params={"speaker": self.tts_speaker},
+                headers={"accept": "audio/wav", "Content-Type": "application/json"},
+                data=json.dumps(query_response),
+                timeout=30
+            )
 
-            response_synth = requests.post(endpoint, params=parameters, headers=headers, timeout=30)
-
-            # レスポンスから音声データを取得
-            audio_data = response_synth.content
-            audio_io = io.BytesIO(audio_data)
+            # レスポンスから音声データを取得して再生
+            audio_io = io.BytesIO(audio_response.content)
             audio = AudioSegment.from_file(audio_io, format="wav")
-
-            # 一時ファイルに保存して再生
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_wav:
-                temp_path = temp_wav.name
-                audio.export(temp_path, format="wav")
-                subprocess.run(
-                    ["ffplay", "-nodisp", "-autoexit", temp_path],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+            play(audio)
 
         except Exception as e:
             self.log_message(f"音声合成エラー: {str(e)}")
+
+    def toggle_voice_input(self):
+        """音声入力のオン/オフを切り替え"""
+        if self.is_recording:
+            # 録音を停止
+            self.is_recording = False
+            self.voice_input_button.config(text="🎤 音声入力")
+            self.log_message("録音を停止しました")
+        else:
+            # 録音を開始
+            self.is_recording = True
+            self.voice_input_button.config(text="⏹️ 停止")
+            self.log_message("🎤 録音準備中...")
+            self.recording_thread = threading.Thread(target=self.record_audio_input, daemon=True)
+            self.recording_thread.start()
+
+    def record_audio_input(self, duration=5, sample_rate=16000, input_volume=3.5):
+        """マイクから音声を録音してSTTで変換し、チャットに送信"""
+        try:
+            CHUNK = 1024
+            FORMAT = pyaudio.paInt16
+            CHANNELS = 1
+
+            audio = pyaudio.PyAudio()
+
+            stream = audio.open(
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=sample_rate,
+                input=True,
+                frames_per_buffer=CHUNK
+            )
+
+            # マイクのウォームアップ（最初の数フレームを破棄）
+            self.log_message("マイクを準備中...")
+            warmup_chunks = int(sample_rate / CHUNK * 0.5)  # 0.5秒間ウォームアップ
+            for _ in range(warmup_chunks):
+                stream.read(CHUNK)  # 読み捨て
+
+            self.log_message("録音中...")
+
+            frames = []
+            # 録音時間を少し長めに調整（ウォームアップ分を考慮）
+            total_chunks = int(sample_rate / CHUNK * (duration + 0.5))
+
+            for i in range(total_chunks):
+                if not self.is_recording:
+                    break
+
+                data = stream.read(CHUNK)
+
+                # 音量を増幅
+                audio_data = np.frombuffer(data, dtype=np.int16)
+                audio_data = np.clip(audio_data * input_volume, -32768, 32767).astype(np.int16)
+                frames.append(audio_data.tobytes())
+
+            stream.stop_stream()
+            stream.close()
+            audio.terminate()
+
+            self.log_message("✓ 録音完了")
+
+            # ローカルフォルダに保存
+            # recorded_audio フォルダを作成（存在しない場合）
+            audio_dir = os.path.join(os.path.dirname(__file__), "recorded_audio")
+            os.makedirs(audio_dir, exist_ok=True)
+
+            # タイムスタンプ付きのファイル名で保存
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            temp_wav_path = os.path.join(audio_dir, f"voice_input_{timestamp}.wav")
+
+            with wave.open(temp_wav_path, "wb") as wf:
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(audio.get_sample_size(FORMAT))
+                wf.setframerate(sample_rate)
+                wf.writeframes(b"".join(frames))
+
+            self.log_message(f"音声ファイルを保存しました: {temp_wav_path}")
+
+            # STTサーバーに送信
+            recognized_text = self.send_wav_to_stt(temp_wav_path)
+
+
+            # 認識されたテキストをチャットに入力
+            if recognized_text:
+                self.root.after(0, lambda: self.chat_entry.insert(0, recognized_text))
+                self.root.after(0, lambda: self.log_message(f"認識結果: {recognized_text}"))
+
+            # 録音状態をリセット
+            self.is_recording = False
+            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力"))
+
+        except Exception as e:
+            self.log_message(f"音声入力エラー: {str(e)}")
+            self.is_recording = False
+            self.root.after(0, lambda: self.voice_input_button.config(text="🎤 音声入力"))
+
+    def send_wav_to_stt(self, wav_path):
+        """WAVファイルをOpenAI Whisper APIに送信してテキストを取得"""
+        try:
+            if not self.client:
+                self.log_message("エラー: OpenAI APIクライアントが初期化されていません")
+                return ""
+
+            with open(wav_path, "rb") as audio_file:
+                transcript = self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="ja"  # 日本語を指定
+                )
+
+            # Whisperの結果からテキストを取得（スペースは保持）
+            return transcript.text
+
+        except Exception as e:
+            self.log_message(f"Whisper STTエラー: {str(e)}")
+            return ""
 
     def display_user_message(self, message):
         self.chat_history.configure(state='normal')
@@ -509,6 +661,24 @@ class AINetSuperApp:
 
         # 商品追加のフィードバックメッセージを返す
         return f"「{product}」をリストに追加しました。他に必要な商品はありますか？"
+
+    def remove_product(self, product):
+        """商品をリストから削除する"""
+        if not product:
+            return "商品名が指定されていません"
+
+        if product not in self.products:
+            return f"「{product}」はリストに存在しません"
+
+        self.products.remove(product)
+        self.update_product_listbox()
+        self.log_message(f"商品「{product}」をリストから削除しました")
+
+        # AIに削除を通知
+        notification = f"ユーザーが「{product}」を買い物リストから削除しました"
+        self.messages.append({"role": "system", "content": notification})
+
+        return f"「{product}」をリストから削除しました"
 
     def delete_selected(self):
         selected = self.product_listbox.curselection()
