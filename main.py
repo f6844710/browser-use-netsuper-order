@@ -30,7 +30,7 @@ NET_SUPER_ID = "00000000000"  # ネットスーパーのイオンID
 NET_SUPER_PASSWORD = "************************"  # ネットスーパーのパスワード
 
 # STT/TTSサーバー設定
-STT_SERVER_URL = "http://192.168.1.5:3000/stt"
+TTS_SERVER_URL = "http://192.168.1.5:10101"
 TTS_SPEAKER_ID = 753902784  # sayo
 
 class FunctionArgs(BaseModel):
