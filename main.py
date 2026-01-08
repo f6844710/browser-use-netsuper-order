@@ -20,16 +20,17 @@ from pydantic import BaseModel
 import traceback
 from openai import OpenAI
 from dotenv import load_dotenv
+from browser_use import ChatGroq
+from groq import Groq
 
 # .envファイルを読み込み
 load_dotenv()
 
 NET_SUPER_ID = "00000000000"  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = "******************"  # ネットスーパーのパスワード
+NET_SUPER_PASSWORD = "************************"  # ネットスーパーのパスワード
 
 # STT/TTSサーバー設定
 STT_SERVER_URL = "http://192.168.1.5:3000/stt"
-TTS_SERVER_URL = "http://192.168.1.5:10101"
 TTS_SPEAKER_ID = 753902784  # sayo
 
 class FunctionArgs(BaseModel):
@@ -62,9 +63,10 @@ class AINetSuperApp:
         self.pass_word = NET_SUPER_PASSWORD
 
         # OpenAI API設定
-        self.api_key = os.environ.get("OPENAI_API_KEY")
+        self.api_key = os.environ.get("GROQ_API_KEY", "")
         self.messages = []
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = Groq(api_key=self.api_key,)
+        self.groq = Groq(api_key=self.api_key,)
         self.system_content = """あなたは優れた買い物アシスタントです。
         お客様が欲しい商品をリストにまとめる手助けをしてください。
         お客様が「〜を買いたい」「〜が欲しい」と言ったら、その商品を抽出してください。
@@ -84,7 +86,7 @@ class AINetSuperApp:
 
     def initialize_openai(self):
         try:
-            self.client = openai.OpenAI(api_key=self.api_key)
+            self.client = Groq(api_key=self.api_key,)
             self.messages.append({"role": "system", "content": self.system_content})
             self.log_message("AIアシスタントを初期化しました")
         except Exception as e:
@@ -323,7 +325,7 @@ class AINetSuperApp:
             ]
 
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="openai/gpt-oss-120b",
                 messages=self.messages,
                 temperature=0.5,
                 tools=tools,
@@ -375,7 +377,7 @@ class AINetSuperApp:
                 # ツール呼び出し結果を元に再度AIに問い合わせ
                 try:
                     second_response = self.client.chat.completions.create(
-                        model="gpt-4.1-mini",
+                        model="openai/gpt-oss-120b",
                         messages=self.messages,
                         temperature=0.5,
                     )
@@ -623,14 +625,18 @@ class AINetSuperApp:
                 return ""
 
             with open(wav_path, "rb") as audio_file:
-                transcript = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="ja"  # 日本語を指定
+                transcription = self.groq.audio.transcriptions.create(
+                    file=audio_file,  # Required audio file
+                    model="whisper-large-v3",  # Required model to use for transcription
+                    language="ja",  # Optional
                 )
 
-            # Whisperの結果からテキストを取得（スペースは保持）
-            return transcript.text
+            # transcriptionオブジェクトからテキストを取得
+            if hasattr(transcription, 'text'):
+                return transcription.text
+            else:
+                self.log_message(f"予期しないレスポンス形式: {transcription}")
+                return ""
 
         except Exception as e:
             self.log_message(f"Whisper STTエラー: {str(e)}")
