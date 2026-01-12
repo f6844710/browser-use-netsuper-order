@@ -44,6 +44,18 @@ pyaudio
 numpy
 ```
 
+### ffmpegのインストール
+
+音声処理にはffmpegが必要です。
+
+**Windows環境の場合:**
+- [こちらの記事](https://qiita.com/Tadataka_Takahashi/items/9dcb0cf308db6f5dc31b)を参考にしてインストールしてください
+
+**Linux環境の場合:**
+```bash
+sudo apt install ffmpeg
+```
+
 ## セットアップ
 
 ### 1. 環境変数の設定
