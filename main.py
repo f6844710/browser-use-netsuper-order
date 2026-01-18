@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import threading
 from datetime import datetime
-import openai
 import io
 import requests
 from pydub import AudioSegment
@@ -27,9 +26,10 @@ from groq import Groq
 load_dotenv()
 
 NET_SUPER_ID = "00000000000"  # ネットスーパーのイオンID
-NET_SUPER_PASSWORD = "************************"  # ネットスーパーのパスワード
+NET_SUPER_PASSWORD = "***************"  # ネットスーパーのパスワード
 
 # STT/TTSサーバー設定
+STT_SERVER_URL = "http://192.168.1.5:3000/stt"
 TTS_SERVER_URL = "http://192.168.1.5:10101"
 TTS_SPEAKER_ID = 753902784  # sayo
 
@@ -56,6 +56,7 @@ class AINetSuperApp:
         self.stt_url = STT_SERVER_URL
         self.tts_url = TTS_SERVER_URL
         self.tts_speaker = TTS_SPEAKER_ID
+        self.stt_engine = "vosk"  # デフォルトはVosk ("vosk" or "whisper")
 
         # 接続情報設定
         self.link = 'https://shop.aeon.com/netsuper/'
@@ -72,6 +73,12 @@ class AINetSuperApp:
         お客様が「〜を買いたい」「〜が欲しい」と言ったら、その商品を抽出してください。
         料理のレシピを尋ねられたら、必要な材料も提案してください。
         商品を抽出したら「[商品]をリストに追加しますか？」と確認してください。"""
+
+        # ブランドマッピング機能
+        self.brand_map = {}  # 商品名 -> ブランド名のマッピング
+        self.brand_map_path = os.path.join(os.getcwd(), "brand_map.json")
+        self.load_brand_map()
+
         self.st = ShoppingThread(
             self.products,
             self.link,
@@ -137,6 +144,29 @@ class AINetSuperApp:
         # 右側：音声入力ボタン（目立つ位置に配置）
         voice_input_frame = ttk.LabelFrame(shopping_frame, text="🎤 音声入力", padding="15")
         voice_input_frame.pack(fill=tk.X, pady=10)
+
+        # STTエンジン選択
+        stt_engine_frame = ttk.Frame(voice_input_frame)
+        stt_engine_frame.pack(fill=tk.X, pady=(0, 10))
+
+        ttk.Label(stt_engine_frame, text="STTエンジン:").pack(side=tk.LEFT, padx=(0, 10))
+
+        self.stt_engine_var = tk.StringVar(value="vosk")
+        vosk_radio = ttk.Radiobutton(
+            stt_engine_frame,
+            text="Vosk (ローカル)",
+            variable=self.stt_engine_var,
+            value="vosk"
+        )
+        vosk_radio.pack(side=tk.LEFT, padx=5)
+
+        whisper_radio = ttk.Radiobutton(
+            stt_engine_frame,
+            text="Whisper (Groq API)",
+            variable=self.stt_engine_var,
+            value="whisper"
+        )
+        whisper_radio.pack(side=tk.LEFT, padx=5)
 
         self.voice_input_button = ttk.Button(
             voice_input_frame,
@@ -208,6 +238,47 @@ class AINetSuperApp:
 
         clear_button = ttk.Button(button_frame, text="リスト全消去", command=self.clear_list)
         clear_button.pack(side=tk.LEFT)
+
+        # ブランドマッピング管理UI
+        brand_frame = ttk.LabelFrame(shopping_frame, text="ブランド設定", padding="10")
+        brand_frame.pack(fill=tk.X, pady=5)
+
+        brand_input_frame = ttk.Frame(brand_frame)
+        brand_input_frame.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(brand_input_frame, text="商品キーワード:").grid(column=0, row=0, sticky=tk.W, padx=(0, 5))
+        self.brand_product_entry = ttk.Entry(brand_input_frame, width=20)
+        self.brand_product_entry.grid(column=1, row=0, sticky=(tk.W, tk.E), padx=5)
+
+        ttk.Label(brand_input_frame, text="優先ブランド:").grid(column=2, row=0, sticky=tk.W, padx=(10, 5))
+        self.brand_name_entry = ttk.Entry(brand_input_frame, width=20)
+        self.brand_name_entry.grid(column=3, row=0, sticky=(tk.W, tk.E), padx=5)
+
+        add_brand_btn = ttk.Button(brand_input_frame, text="追加/更新", command=self.add_brand_mapping)
+        add_brand_btn.grid(column=4, row=0, padx=5)
+
+        brand_input_frame.columnconfigure(1, weight=1)
+        brand_input_frame.columnconfigure(3, weight=1)
+
+        # ブランドマッピング一覧
+        brand_list_frame = ttk.Frame(brand_frame)
+        brand_list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+
+        self.brand_listbox = tk.Listbox(brand_list_frame, height=4)
+        self.brand_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        brand_scrollbar = ttk.Scrollbar(brand_list_frame, orient="vertical", command=self.brand_listbox.yview)
+        brand_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.brand_listbox.configure(yscrollcommand=brand_scrollbar.set)
+
+        brand_btn_frame = ttk.Frame(brand_frame)
+        brand_btn_frame.pack(fill=tk.X, pady=(5, 0))
+
+        del_brand_btn = ttk.Button(brand_btn_frame, text="選択を削除", command=self.delete_brand_mapping)
+        del_brand_btn.pack(side=tk.LEFT, padx=5)
+
+        # 初期表示を更新
+        self.update_brand_listbox()
 
         # 実行コントロール
         exec_frame = ttk.LabelFrame(shopping_frame, text="実行コントロール", padding="10")
@@ -519,6 +590,95 @@ class AINetSuperApp:
         except Exception as e:
             self.log_message(f"音声合成エラー: {str(e)}")
 
+    # ----------------- ブランドマッピング関連 -----------------
+    def load_brand_map(self):
+        """brand_map.json を読み込む（なければ空辞書）"""
+        try:
+            if os.path.exists(self.brand_map_path):
+                with open(self.brand_map_path, "r", encoding="utf-8") as f:
+                    self.brand_map = json.load(f)
+                # ウィジェットが存在する場合のみログ出力
+                if hasattr(self, 'log_text'):
+                    self.log_message(f"ブランドマップを読み込みました: {len(self.brand_map)}件")
+            else:
+                self.brand_map = {}
+        except Exception as e:
+            if hasattr(self, 'log_text'):
+                self.log_message(f"ブランドマップ読み込みエラー: {str(e)}")
+            self.brand_map = {}
+
+    def save_brand_map(self):
+        """brand_map.json に保存する"""
+        try:
+            with open(self.brand_map_path, "w", encoding="utf-8") as f:
+                json.dump(self.brand_map, f, ensure_ascii=False, indent=2)
+            self.log_message("ブランドマップを保存しました")
+        except Exception as e:
+            self.log_message(f"ブランドマップ保存エラー: {str(e)}")
+
+    def add_brand_mapping(self):
+        """ブランドマッピングを追加/更新する"""
+        key = self.brand_product_entry.get().strip()
+        brand = self.brand_name_entry.get().strip()
+
+        if not key or not brand:
+            messagebox.showwarning("入力エラー", "商品キーワードとブランド名の両方を入力してください")
+            return
+
+        # 上書き/追加
+        self.brand_map[key] = brand
+        self.save_brand_map()
+        self.update_brand_listbox()
+
+        # 入力フィールドをクリア
+        self.brand_product_entry.delete(0, tk.END)
+        self.brand_name_entry.delete(0, tk.END)
+
+        self.log_message(f"ブランド設定を追加/更新しました: {key} → {brand}")
+
+    def delete_brand_mapping(self):
+        """選択されたブランドマッピングを削除する"""
+        sel = self.brand_listbox.curselection()
+        if not sel:
+            messagebox.showinfo("選択なし", "削除する項目を選択してください")
+            return
+
+        idx = sel[0]
+        # listbox の表示は 'key → brand'
+        item = self.brand_listbox.get(idx)
+        key = item.split(' → ')[0]
+
+        if key in self.brand_map:
+            del self.brand_map[key]
+            self.save_brand_map()
+            self.update_brand_listbox()
+            self.log_message(f"ブランド設定を削除しました: {key}")
+
+    def update_brand_listbox(self):
+        """ブランドマッピング一覧を更新する"""
+        self.brand_listbox.delete(0, tk.END)
+        for k, v in self.brand_map.items():
+            self.brand_listbox.insert(tk.END, f"{k} → {v}")
+
+    def get_preferred_brand(self, product_name):
+        """product_name に対して brand_map のキーが含まれていれば優先ブランドを返す（部分一致、ケース不問）"""
+        if not product_name:
+            return None
+
+        low = product_name.lower()
+
+        # 完全一致を優先
+        for k, v in self.brand_map.items():
+            if k.lower() == low:
+                return v
+
+        # 部分一致（キーワードが商品名に含まれる）
+        for k, v in self.brand_map.items():
+            if k.lower() in low:
+                return v
+
+        return None
+
     def toggle_voice_input(self):
         """音声入力のオン/オフを切り替え"""
         if self.is_recording:
@@ -580,14 +740,10 @@ class AINetSuperApp:
 
             self.log_message("✓ 録音完了")
 
-            # ローカルフォルダに保存
-            # recorded_audio フォルダを作成（存在しない場合）
-            audio_dir = os.path.join(os.path.dirname(__file__), "recorded_audio")
-            os.makedirs(audio_dir, exist_ok=True)
-
-            # タイムスタンプ付きのファイル名で保存
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            temp_wav_path = os.path.join(audio_dir, f"voice_input_{timestamp}.wav")
+            # 一時ファイルとして保存
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+                temp_wav_path = temp_file.name
 
             with wave.open(temp_wav_path, "wb") as wf:
                 wf.setnchannels(CHANNELS)
@@ -595,11 +751,14 @@ class AINetSuperApp:
                 wf.setframerate(sample_rate)
                 wf.writeframes(b"".join(frames))
 
-            self.log_message(f"音声ファイルを保存しました: {temp_wav_path}")
-
             # STTサーバーに送信
             recognized_text = self.send_wav_to_stt(temp_wav_path)
 
+            # 一時ファイルを削除
+            try:
+                os.remove(temp_wav_path)
+            except Exception as e:
+                self.log_message(f"一時ファイル削除エラー: {str(e)}")
 
             # 認識されたテキストをチャットに入力
             if recognized_text:
@@ -618,22 +777,62 @@ class AINetSuperApp:
             self.root.after(0, lambda: self.recording_status_label.config(text="エラー", foreground="red"))
 
     def send_wav_to_stt(self, wav_path):
-        """WAVファイルをOpenAI Whisper APIに送信してテキストを取得"""
+        """WAVファイルを選択されたSTTエンジンに送信してテキストを取得"""
+        # 選択されたSTTエンジンを取得
+        stt_engine = self.stt_engine_var.get()
+
+        if stt_engine == "whisper":
+            return self.send_wav_to_whisper(wav_path)
+        else:
+            return self.send_wav_to_vosk(wav_path)
+
+    def send_wav_to_vosk(self, wav_path):
+        """WAVファイルをVosk STTサーバーに送信してテキストを取得"""
         try:
-            if not self.client:
-                self.log_message("エラー: OpenAI APIクライアントが初期化されていません")
+            with open(wav_path, "rb") as audio_file:
+                files = {"audio": audio_file}
+                response = requests.post(self.stt_url, files=files, timeout=10)
+
+            if response.status_code == 200:
+                result = response.json()
+                text = result.get("text", "")
+                if text:
+                    self.log_message(f"Vosk認識結果: {text}")
+                    return text
+                else:
+                    self.log_message("音声が認識されませんでした（Vosk）")
+                    return ""
+            else:
+                self.log_message(f"Vosk STTエラー: HTTP {response.status_code}")
+                return ""
+
+        except Exception as e:
+            self.log_message(f"Vosk STTエラー: {str(e)}")
+            return ""
+
+    def send_wav_to_whisper(self, wav_path):
+        """WAVファイルをGroq Whisper APIに送信してテキストを取得"""
+        try:
+            if not self.groq:
+                self.log_message("エラー: Groq APIクライアントが初期化されていません")
                 return ""
 
             with open(wav_path, "rb") as audio_file:
                 transcription = self.groq.audio.transcriptions.create(
-                    file=audio_file,  # Required audio file
-                    model="whisper-large-v3",  # Required model to use for transcription
-                    language="ja",  # Optional
+                    file=audio_file,
+                    model="whisper-large-v3",
+                    language="ja",
                 )
 
             # transcriptionオブジェクトからテキストを取得
             if hasattr(transcription, 'text'):
-                return transcription.text
+                text = transcription.text
+                if text:
+                    self.log_message(f"Whisper認識結果: {text}")
+                    return text
+                else:
+                    self.log_message("音声が認識されませんでした（Whisper）")
+                    return ""
             else:
                 self.log_message(f"予期しないレスポンス形式: {transcription}")
                 return ""
@@ -672,20 +871,36 @@ class AINetSuperApp:
             self.product_entry.delete(0, tk.END)
 
     def add_product(self, product):
-        if not product or product in self.products:  # 空または重複チェック
-            return f"「{product}」は既にリストに追加されています" if product else "商品名が指定されていません"
+        if not product:
+            return "商品名が指定されていません"
 
-        self.products.append(product)
-        self.product_listbox.insert(tk.END, product)
-        self.log_message(f"商品「{product}」をリストに追加しました")
+        # 優先ブランドがあれば適用
+        brand = self.get_preferred_brand(product)
+        display_name = product
+
+        if brand:
+            # 既にブランド表記が含まれていないか確認して付加
+            if brand.lower() not in product.lower():
+                display_name = f"{product}（{brand}）"
+                self.log_message(f"ブランド「{brand}」を適用しました")
+
+        # 重複チェック
+        if display_name in self.products:
+            return f"「{display_name}」は既にリストに追加されています"
+
+        self.products.append(display_name)
+        self.product_listbox.insert(tk.END, display_name)
+        self.log_message(f"商品「{display_name}」をリストに追加しました")
         self.update_product_listbox()
 
-        # AIに追加を通知
+        # AIに追加を通知（ブランド情報を含める）
         notification = f"ユーザーが「{product}」を買い物リストに追加しました"
+        if brand:
+            notification += f"（優先ブランド: {brand}）"
         self.messages.append({"role": "system", "content": notification})
 
         # 商品追加のフィードバックメッセージを返す
-        return f"「{product}」をリストに追加しました。他に必要な商品はありますか？"
+        return f"「{display_name}」をリストに追加しました。他に必要な商品はありますか？"
 
     def remove_product(self, product):
         """商品をリストから削除する"""
