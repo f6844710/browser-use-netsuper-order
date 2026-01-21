@@ -5,6 +5,7 @@ from typing import List, Callable, Optional
 from browser_use import Agent, Browser
 from browser_use import ChatGroq
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
