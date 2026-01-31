@@ -762,8 +762,13 @@ class AINetSuperApp:
 
             # 認識されたテキストをチャットに入力
             if recognized_text:
-                self.root.after(0, lambda: self.chat_entry.insert(0, recognized_text))
-                self.root.after(0, lambda: self.log_message(f"認識結果: {recognized_text}"))
+                self.log_message(f"✓ 認識結果を取得: {recognized_text}")
+                # テキストフィールドをクリアしてから入力
+                self.root.after(0, lambda text=recognized_text: self.chat_entry.delete(0, tk.END))
+                self.root.after(10, lambda text=recognized_text: self.chat_entry.insert(0, text))
+                self.root.after(20, lambda text=recognized_text: self.log_message(f"テキストフィールドに入力: {text}"))
+            else:
+                self.log_message("⚠ 認識結果が空です")
 
             # 録音状態をリセット
             self.is_recording = False
@@ -790,12 +795,15 @@ class AINetSuperApp:
         """WAVファイルをVosk STTサーバーに送信してテキストを取得"""
         try:
             with open(wav_path, "rb") as audio_file:
-                files = {"audio": audio_file}
+                # stt_client.pyと同じ形式でファイルを送信
+                files = {"file": ("audio.wav", audio_file, "audio/wav")}
                 response = requests.post(self.stt_url, files=files, timeout=10)
+
+            self.log_message(f"Vosk STT: HTTP {response.status_code}")
 
             if response.status_code == 200:
                 result = response.json()
-                text = result.get("text", "")
+                text = result.get("text", "").replace(" ", "")  # スペースを除去
                 if text:
                     self.log_message(f"Vosk認識結果: {text}")
                     return text
@@ -804,10 +812,17 @@ class AINetSuperApp:
                     return ""
             else:
                 self.log_message(f"Vosk STTエラー: HTTP {response.status_code}")
+                try:
+                    error_body = response.text
+                    self.log_message(f"エラー詳細: {error_body}")
+                except:
+                    pass
                 return ""
 
         except Exception as e:
+            import traceback
             self.log_message(f"Vosk STTエラー: {str(e)}")
+            self.log_message(f"詳細: {traceback.format_exc()}")
             return ""
 
     def send_wav_to_whisper(self, wav_path):
@@ -817,16 +832,27 @@ class AINetSuperApp:
                 self.log_message("エラー: Groq APIクライアントが初期化されていません")
                 return ""
 
+            file_size = os.path.getsize(wav_path)
+            self.log_message(f"Whisper API: ファイルサイズ {file_size} bytes")
+
+            # ファイルサイズが小さすぎる場合は警告
+            if file_size < 1000:
+                self.log_message("警告: 音声ファイルが小さすぎる可能性があります")
+
+            # ファイルを開いて送信
             with open(wav_path, "rb") as audio_file:
+                # Groq APIに送信（最もシンプルな方法）
                 transcription = self.groq.audio.transcriptions.create(
-                    file=audio_file,
+                    file=(os.path.basename(wav_path), audio_file),
                     model="whisper-large-v3",
                     language="ja",
+                    response_format="verbose_json",  # より詳細な情報を取得
+                    temperature=0.0
                 )
 
-            # transcriptionオブジェクトからテキストを取得
+            # レスポンスからテキストを取得
             if hasattr(transcription, 'text'):
-                text = transcription.text
+                text = transcription.text.strip()
                 if text:
                     self.log_message(f"Whisper認識結果: {text}")
                     return text
@@ -838,7 +864,19 @@ class AINetSuperApp:
                 return ""
 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
             self.log_message(f"Whisper STTエラー: {str(e)}")
+            self.log_message(f"詳細: {error_details}")
+
+            # HTTPエラーの場合、レスポンスボディも表示
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_body = e.response.text if hasattr(e.response, 'text') else str(e.response.content)
+                    self.log_message(f"APIレスポンス: {error_body}")
+                except:
+                    pass
+
             return ""
 
     def display_user_message(self, message):
