@@ -42,7 +42,7 @@ class AINetSuperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("AIチャット対応ネットスーパー自動買い物アシスタント")
-        self.root.geometry("1500x900")
+        self.root.attributes('-fullscreen', True)
 
         self.products = []
         self.worker = None
@@ -72,7 +72,8 @@ class AINetSuperApp:
         お客様が欲しい商品をリストにまとめる手助けをしてください。
         お客様が「〜を買いたい」「〜が欲しい」と言ったら、その商品を抽出してください。
         料理のレシピを尋ねられたら、必要な材料も提案してください。
-        商品を抽出したら「[商品]をリストに追加しますか？」と確認してください。"""
+        商品を抽出したら「[商品]をリストに追加しますか？」と確認してください。
+        商品の追加と削除を同時に行わないでください。"""
 
         # ブランドマッピング機能
         self.brand_map = {}  # 商品名 -> ブランド名のマッピング
@@ -100,6 +101,24 @@ class AINetSuperApp:
             self.log_message(f"AIアシスタントの初期化に失敗しました: {str(e)}")
 
     def create_widgets(self):
+        # ===== 大きめフォント設定（高齢者向け） =====
+        BASE_FONT_SIZE = 16
+        LARGE_FONT = ("", BASE_FONT_SIZE)
+        LARGE_FONT_BOLD = ("", BASE_FONT_SIZE, "bold")
+        LABEL_FONT = ("", BASE_FONT_SIZE)
+        CHAT_FONT = ("", BASE_FONT_SIZE)
+        LOG_FONT = ("", BASE_FONT_SIZE - 2)
+        BTN_FONT = ("", BASE_FONT_SIZE)
+
+        style = ttk.Style()
+        style.configure(".", font=LARGE_FONT)
+        style.configure("TLabel", font=LABEL_FONT)
+        style.configure("TButton", font=BTN_FONT, padding=6)
+        style.configure("TEntry", font=LARGE_FONT)
+        style.configure("TCheckbutton", font=LARGE_FONT)
+        style.configure("TRadiobutton", font=LARGE_FONT)
+        style.configure("TLabelframe.Label", font=LARGE_FONT_BOLD)
+
         # メインフレーム
         main_container = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -113,11 +132,11 @@ class AINetSuperApp:
         main_container.add(shopping_frame, weight=1)
 
         # チャットエリアの設定
-        chat_label = ttk.Label(chat_frame, text="AIアシスタントとチャット")
+        chat_label = ttk.Label(chat_frame, text="AIアシスタントとチャット", font=LARGE_FONT_BOLD)
         chat_label.pack(anchor=tk.W, pady=5)
 
         # チャット履歴表示
-        self.chat_history = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD, height=25)
+        self.chat_history = scrolledtext.ScrolledText(chat_frame, wrap=tk.WORD, height=25, font=CHAT_FONT)
         self.chat_history.pack(fill=tk.BOTH, expand=True, pady=5)
         self.chat_history.configure(state='disabled')
 
@@ -125,8 +144,8 @@ class AINetSuperApp:
         input_frame = ttk.Frame(chat_frame)
         input_frame.pack(fill=tk.X, pady=5)
 
-        self.chat_entry = ttk.Entry(input_frame)
-        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.chat_entry = ttk.Entry(input_frame, font=LARGE_FONT)
+        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=6)
         self.chat_entry.bind("<Return>", lambda e: self.send_message())
 
         send_button = ttk.Button(input_frame, text="送信", command=self.send_message)
@@ -174,14 +193,14 @@ class AINetSuperApp:
             command=self.toggle_voice_input,
             width=30
         )
-        self.voice_input_button.pack(fill=tk.X, ipady=10)
+        self.voice_input_button.pack(fill=tk.X, ipady=14)
 
         # 録音状態表示ラベル
         self.recording_status_label = ttk.Label(
             voice_input_frame,
             text="準備完了",
             foreground="gray",
-            font=("", 9)
+            font=("", BASE_FONT_SIZE - 1)
         )
         self.recording_status_label.pack(pady=(5, 0))
 
@@ -190,18 +209,18 @@ class AINetSuperApp:
         auth_frame.pack(fill=tk.X, pady=5)
 
         ttk.Label(auth_frame, text="ウェブサイト:").grid(column=0, row=0, sticky=tk.W)
-        self.link_entry = ttk.Entry(auth_frame, width=40)
-        self.link_entry.grid(column=1, row=0, sticky=(tk.W, tk.E), padx=5)
+        self.link_entry = ttk.Entry(auth_frame, width=40, font=LARGE_FONT)
+        self.link_entry.grid(column=1, row=0, sticky=(tk.W, tk.E), padx=5, ipady=4)
         self.link_entry.insert(0, self.link)
 
         ttk.Label(auth_frame, text="イオンID:").grid(column=0, row=1, sticky=tk.W)
-        self.id_entry = ttk.Entry(auth_frame, width=40)
-        self.id_entry.grid(column=1, row=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        self.id_entry = ttk.Entry(auth_frame, width=40, font=LARGE_FONT)
+        self.id_entry.grid(column=1, row=1, sticky=(tk.W, tk.E), padx=5, pady=5, ipady=4)
         self.id_entry.insert(0, self.aeon_id)
 
         ttk.Label(auth_frame, text="パスワード:").grid(column=0, row=2, sticky=tk.W)
-        self.pass_entry = ttk.Entry(auth_frame, width=40, show="*")
-        self.pass_entry.grid(column=1, row=2, sticky=(tk.W, tk.E), padx=5)
+        self.pass_entry = ttk.Entry(auth_frame, width=40, show="*", font=LARGE_FONT)
+        self.pass_entry.grid(column=1, row=2, sticky=(tk.W, tk.E), padx=5, ipady=4)
         self.pass_entry.insert(0, self.pass_word)
 
         # 商品リスト
@@ -211,8 +230,8 @@ class AINetSuperApp:
         input_product_frame = ttk.Frame(product_frame)
         input_product_frame.pack(fill=tk.X)
 
-        self.product_entry = ttk.Entry(input_product_frame)
-        self.product_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.product_entry = ttk.Entry(input_product_frame, font=LARGE_FONT)
+        self.product_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5), ipady=4)
         self.product_entry.bind("<Return>", lambda e: self.add_product_manual())
 
         add_button = ttk.Button(input_product_frame, text="追加", command=self.add_product_manual)
@@ -222,7 +241,7 @@ class AINetSuperApp:
         list_frame = ttk.Frame(product_frame)
         list_frame.pack(fill=tk.BOTH, expand=True, pady=5)
 
-        self.product_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED)
+        self.product_listbox = tk.Listbox(list_frame, selectmode=tk.EXTENDED, font=LARGE_FONT)
         self.product_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.product_listbox.yview)
@@ -247,12 +266,12 @@ class AINetSuperApp:
         brand_input_frame.pack(fill=tk.X, pady=(0, 5))
 
         ttk.Label(brand_input_frame, text="商品キーワード:").grid(column=0, row=0, sticky=tk.W, padx=(0, 5))
-        self.brand_product_entry = ttk.Entry(brand_input_frame, width=20)
-        self.brand_product_entry.grid(column=1, row=0, sticky=(tk.W, tk.E), padx=5)
+        self.brand_product_entry = ttk.Entry(brand_input_frame, width=20, font=LARGE_FONT)
+        self.brand_product_entry.grid(column=1, row=0, sticky=(tk.W, tk.E), padx=5, ipady=4)
 
         ttk.Label(brand_input_frame, text="優先ブランド:").grid(column=2, row=0, sticky=tk.W, padx=(10, 5))
-        self.brand_name_entry = ttk.Entry(brand_input_frame, width=20)
-        self.brand_name_entry.grid(column=3, row=0, sticky=(tk.W, tk.E), padx=5)
+        self.brand_name_entry = ttk.Entry(brand_input_frame, width=20, font=LARGE_FONT)
+        self.brand_name_entry.grid(column=3, row=0, sticky=(tk.W, tk.E), padx=5, ipady=4)
 
         add_brand_btn = ttk.Button(brand_input_frame, text="追加/更新", command=self.add_brand_mapping)
         add_brand_btn.grid(column=4, row=0, padx=5)
@@ -264,7 +283,7 @@ class AINetSuperApp:
         brand_list_frame = ttk.Frame(brand_frame)
         brand_list_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
 
-        self.brand_listbox = tk.Listbox(brand_list_frame, height=4)
+        self.brand_listbox = tk.Listbox(brand_list_frame, height=4, font=LARGE_FONT)
         self.brand_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         brand_scrollbar = ttk.Scrollbar(brand_list_frame, orient="vertical", command=self.brand_listbox.yview)
@@ -285,16 +304,16 @@ class AINetSuperApp:
         exec_frame.pack(fill=tk.X, pady=5)
 
         self.start_button = ttk.Button(exec_frame, text="買い物を開始", command=self.start_shopping)
-        self.start_button.pack(fill=tk.X)
+        self.start_button.pack(fill=tk.X, ipady=6)
 
         self.stop_button = ttk.Button(exec_frame, text="処理を停止", command=self.stop_shopping, state=tk.DISABLED)
-        self.stop_button.pack(fill=tk.X, pady=5)
+        self.stop_button.pack(fill=tk.X, pady=5, ipady=6)
 
         # ログ表示
         log_label = ttk.Label(exec_frame, text="ログ:")
         log_label.pack(anchor=tk.W, pady=2)
 
-        self.log_text = scrolledtext.ScrolledText(exec_frame, height=8, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(exec_frame, height=8, wrap=tk.WORD, font=LOG_FONT)
         self.log_text.pack(fill=tk.BOTH, expand=True)
         self.log_text.configure(state='disabled')
 
@@ -303,8 +322,8 @@ class AINetSuperApp:
         api_frame.pack(fill=tk.X, pady=5)
 
         ttk.Label(api_frame, text="OpenAI API Key:").pack(anchor=tk.W)
-        self.api_key_entry = ttk.Entry(api_frame, width=50, show="*")
-        self.api_key_entry.pack(fill=tk.X, pady=5)
+        self.api_key_entry = ttk.Entry(api_frame, width=50, show="*", font=LARGE_FONT)
+        self.api_key_entry.pack(fill=tk.X, pady=5, ipady=4)
         self.api_key_entry.insert(0, self.api_key)
 
         update_api_button = ttk.Button(api_frame, text="APIキーを更新", command=self.update_api_key)
@@ -887,8 +906,8 @@ class AINetSuperApp:
         self.chat_history.configure(state='disabled')
 
         # タグ設定
-        self.chat_history.tag_configure("user_tag", foreground="blue", font=("", 10, "bold"))
-        self.chat_history.tag_configure("bot_tag", foreground="green", font=("", 10, "bold"))
+        self.chat_history.tag_configure("user_tag", foreground="blue", font=("", 16, "bold"))
+        self.chat_history.tag_configure("bot_tag", foreground="green", font=("", 16, "bold"))
 
     def display_bot_message(self, message):
         self.chat_history.configure(state='normal')
